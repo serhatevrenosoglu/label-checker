@@ -1,0 +1,136 @@
+import os
+import requests
+from datetime import date
+
+JIRA_EMAIL = os.environ["JIRA_EMAIL"]
+JIRA_TOKEN = os.environ["JIRA_TOKEN"]
+
+JIRA_BASE = "https://invent.atlassian.net"
+SLACK_CHANNEL = "U029NHG8EPQ"
+JQL = "project in (TCS,BYMN,ATCS,LP2CS,IPEKYOLMD,MMCS) AND labels is not EMPTY AND statusCategory != Done"
+
+VALID_COMBOS = {
+    "Service/Operational Work Log": ["ETL","OperationalRequest","ProcessFollowups","Parameter/Configuration","RunReview","RunTrigger","RunError","Dagfails","Maintenance"],
+    "Development": ["Enhancement","NewFeature","Configuration","Forecasting/AccuracyImprovement","UI","DataTransfer"],
+    "Extension": ["Enhancement","VersionUpgrade","NewFeature","Revision/Configuration","Implementation"],
+    "Analysis": ["Diagnostic Analysis","Simulation","KPIFollowups","InsightAnalysis","PairControl","SpecialDayEffect","Seasonality","Extension","Cost","Ext_Assessment/DeepDive","Int_Assessment/DeepDive"],
+    "Reporting": ["ETL","LogicBug","DataBug","UIBug","Bug","New","Revision","Revision/Configuration"],
+    "Documentation": ["Presentation/MeetingNotes","NewDocuments/Revision"],
+    "Bug": ["LogicBug","DataBug","UIBug","Bug","Dagfails","RunError","Debug"],
+    "Incident": ["DataQuality","UI","Result"],
+    "Handover": ["Meeting","Documentation","QualityControls","LeftOver"],
+    "Int Call": ["PlanningMeeting","PlanningMeetings","Meeting"],
+    "Client Call": ["ClientMeetings","ClientMeeting","ClientTrainingSessions"],
+    "VersionUpgrade": ["Meeting","Test","Bug","Documentation/Analysis"],
+    "Service Work Log (Customer)": ["ETL","OperationalRequest","ProcessFollowups","RunReview","RunTrigger","Revision","RunError"],
+    "Service Work Log (Int)": ["ETL","OperationalRequest","ProcessFollowups","RunReview","RunTrigger","RunError"],
+    "Operational": ["ETL","OperationalRequest","ProcessFollowups","Parameter/Configuration","RunReview","RunTrigger","RunError","Dagfails","Maintenance"],
+}
+SKIP_TYPES = {"Task", "Sub-task"}
+
+
+def fetch_all_issues():
+    auth = (JIRA_EMAIL, JIRA_TOKEN)
+    issues = []
+    next_page_token = None
+    while True:
+        body = {"jql": JQL, "maxResults": 100,
+                "fields": ["summary", "issuetype", "labels", "project"]}
+        if next_page_token:
+            body["nextPageToken"] = next_page_token
+        resp = requests.post(
+            f"{JIRA_BASE}/rest/api/3/search/jql",
+            auth=auth,
+            json=body,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        batch = data.get("issues", [])
+        issues.extend(batch)
+        if data.get("isLast", True) or not batch:
+            break
+        next_page_token = data.get("nextPageToken")
+        if not next_page_token:
+            break
+    return issues
+
+
+def check_issues(issues):
+    mismatches = []
+    for issue in issues:
+        fields = issue["fields"]
+        issue_type = fields["issuetype"]["name"]
+        if issue_type in SKIP_TYPES:
+            continue
+        labels = fields.get("labels", [])
+        valid = VALID_COMBOS.get(issue_type)
+        if valid is None:
+            continue
+        for label in labels:
+            if label not in valid:
+                mismatches.append({
+                    "project": fields["project"]["key"],
+                    "key": issue["key"],
+                    "summary": fields["summary"],
+                    "issue_type": issue_type,
+                    "label": label,
+                })
+    return mismatches
+
+
+def send_via_anthropic(text):
+    api_key = os.environ["ANTHROPIC_API_KEY"]
+    resp = requests.post(
+        "https://api.anthropic.com/v1/messages",
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        },
+        json={
+            "model": "claude-sonnet-4-20250514",
+            "max_tokens": 1024,
+            "system": "You are a Slack messaging assistant. When given a message, send it to Slack user U029NHG8EPQ using the chat.postMessage API with the MCP Slack token.",
+            "messages": [
+                {"role": "user", "content": text}
+            ],
+        },
+    )
+    resp.raise_for_status()
+    result = resp.json()
+    print("Anthropic response:", result.get("content", [{}])[0].get("text", "")[:200])
+
+
+def main():
+    test_mode = os.environ.get("TEST_MODE", "").lower() in ("1", "true", "yes")
+    today = date.today().strftime("%Y-%m-%d")
+
+    print(f"Fetching Jira issues...")
+    issues = fetch_all_issues()
+    print(f"Total issues fetched: {len(issues)}")
+
+    mismatches = check_issues(issues)
+
+    if not mismatches:
+        text = f"✅ *Günlük Label Kontrol — {today}*\nTüm boardlar temiz, uyumsuzluk bulunamadı."
+        print(text)
+    else:
+        lines = [f"🔍 *Günlük Label Kontrol — {today}*\n"]
+        for m in mismatches:
+            lines.append(
+                f"⚠️ *{m['project']}* | {m['key']} — {m['summary']}\n"
+                f"Type: `{m['issue_type']}` | Label: `{m['label']}`"
+            )
+        text = "\n\n".join(lines)
+        print(text)
+
+    if test_mode:
+        print(f"\n[TEST MODE] Slack skipped. Mismatches found: {len(mismatches)}")
+        return
+
+    send_via_anthropic(text)
+    print(f"Done. Mismatches found: {len(mismatches)}")
+
+
+if __name__ == "__main__":
+    main()
