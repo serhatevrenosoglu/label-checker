@@ -4,6 +4,7 @@ from datetime import date
 
 JIRA_EMAIL = os.environ["JIRA_EMAIL"]
 JIRA_TOKEN = os.environ["JIRA_TOKEN"]
+SLACK_WEBHOOK_URL = os.environ["SLACK_WEBHOOK_URL"]
 
 JIRA_BASE = "https://invent.atlassian.net"
 SLACK_CHANNEL = "U029NHG8EPQ"
@@ -78,27 +79,9 @@ def check_issues(issues):
     return mismatches
 
 
-def send_via_anthropic(text):
-    api_key = os.environ["ANTHROPIC_API_KEY"]
-    resp = requests.post(
-        "https://api.anthropic.com/v1/messages",
-        headers={
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        },
-        json={
-            "model": "claude-sonnet-4-20250514",
-            "max_tokens": 1024,
-            "system": "You are a Slack messaging assistant. When given a message, send it to Slack user U029NHG8EPQ using the chat.postMessage API with the MCP Slack token.",
-            "messages": [
-                {"role": "user", "content": text}
-            ],
-        },
-    )
+def send_slack(text):
+    resp = requests.post(SLACK_WEBHOOK_URL, json={"text": text})
     resp.raise_for_status()
-    result = resp.json()
-    print("Anthropic response:", result.get("content", [{}])[0].get("text", "")[:200])
 
 
 def main():
@@ -128,7 +111,7 @@ def main():
         print(f"\n[TEST MODE] Slack skipped. Mismatches found: {len(mismatches)}")
         return
 
-    send_via_anthropic(text)
+    send_slack(text)
     print(f"Done. Mismatches found: {len(mismatches)}")
 
 
