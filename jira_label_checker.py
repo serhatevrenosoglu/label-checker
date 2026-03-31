@@ -1,4 +1,5 @@
 import os
+import json
 import requests
 from datetime import date
 
@@ -80,11 +81,8 @@ def check_issues(issues):
 
 def send_slack(text):
     url = os.environ["SLACK_WEBHOOK_URL"]
-    resp = requests.post(
-        url,
-        json={"text": text},
-        headers={"Content-Type": "application/json"}
-    )
+    payload = {"payload": json.dumps({"text": text})}
+    resp = requests.post(url, data=payload)
     print(f"Slack status: {resp.status_code}")
     print(f"Slack response: {resp.text}")
 
