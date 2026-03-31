@@ -4,7 +4,6 @@ from datetime import date
 
 JIRA_EMAIL = os.environ["JIRA_EMAIL"]
 JIRA_TOKEN = os.environ["JIRA_TOKEN"]
-SLACK_WEBHOOK_URL = os.environ["SLACK_WEBHOOK_URL"]
 
 JIRA_BASE = "https://invent.atlassian.net"
 SLACK_CHANNEL = "U029NHG8EPQ"
@@ -80,8 +79,11 @@ def check_issues(issues):
 
 
 def send_slack(text):
-    resp = requests.post(SLACK_WEBHOOK_URL, json={"text": text})
-    resp.raise_for_status()
+    url = os.environ["SLACK_WEBHOOK_URL"]
+    payload = {"text": text}
+    headers = {"Content-Type": "application/json"}
+    resp = requests.post(url, json=payload, headers=headers)
+    print(f"Slack response: {resp.status_code} - {resp.text}")
 
 
 def main():
