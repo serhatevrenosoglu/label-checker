@@ -80,19 +80,13 @@ def check_issues(issues):
 
 def send_slack(text):
     url = os.environ["SLACK_WEBHOOK_URL"]
-    payload = {
-        "blocks": [
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": text
-                }
-            }
-        ]
-    }
-    resp = requests.post(url, json=payload, headers={"Content-Type": "application/json"})
-    print(f"Slack status: {resp.status_code}, response: {resp.text}")
+    resp = requests.post(
+        url,
+        json={"text": text},
+        headers={"Content-Type": "application/json"}
+    )
+    print(f"Slack status: {resp.status_code}")
+    print(f"Slack response: {resp.text}")
 
 
 def main():
