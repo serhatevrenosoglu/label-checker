@@ -1,14 +1,28 @@
 import os
 import json
 import requests
+import pyodbc
 from datetime import date
+
+DB_SERVER = os.environ.get("DB_SERVER", "EU-DB-DEMO")
+DB_NAME = os.environ.get("DB_NAME", "CostETL")
+
+
+def get_db_connection():
+    conn_str = (
+        f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+        f"SERVER={DB_SERVER};"
+        f"DATABASE={DB_NAME};"
+        f"Trusted_Connection=yes;"
+    )
+    return pyodbc.connect(conn_str)
 
 JIRA_EMAIL = os.environ["JIRA_EMAIL"]
 JIRA_TOKEN = os.environ["JIRA_TOKEN"]
 
 JIRA_BASE = "https://invent.atlassian.net"
 SLACK_CHANNEL = "U029NHG8EPQ"
-JQL = "project in (TCS,BYMN,ATCS,LP2CS,IPEKYOLMD,MMCS) AND labels is not EMPTY AND statusCategory != Done"
+JQL = "project in (TCS,BYMN,ATCS,LP2CS,IPEKYOLMD,MMCS) AND labels is not EMPTY AND created >= -90d"
 
 VALID_COMBOS = {
     "Service/Operational Work Log": ["ETL","OperationalRequest","ProcessFollowups","Parameter/Configuration","RunReview","RunTrigger","RunError","Dagfails","Maintenance"],
@@ -36,7 +50,7 @@ def fetch_all_issues():
     next_page_token = None
     while True:
         body = {"jql": JQL, "maxResults": 100,
-                "fields": ["summary", "issuetype", "labels", "project"]}
+                "fields": ["summary", "issuetype", "labels", "project", "created"]}
         if next_page_token:
             body["nextPageToken"] = next_page_token
         resp = requests.post(
@@ -98,10 +112,10 @@ def main():
     mismatches = check_issues(issues)
 
     if not mismatches:
-        text = f"✅ *Günlük Label Kontrol — {today}*\nTüm boardlar temiz, uyumsuzluk bulunamadı."
+        text = f"✅ *Günlük Label Kontrol (Son 3 Ay) — {today}*\nTüm boardlar temiz, uyumsuzluk bulunamadı."
         print(text)
     else:
-        lines = [f"🔍 *Günlük Label Kontrol — {today}*\n"]
+        lines = [f"🔍 *Günlük Label Kontrol (Son 3 Ay) — {today}*\n"]
         for m in mismatches:
             lines.append(
                 f"⚠️ *{m['project']}* | {m['key']} — {m['summary']}\n"
