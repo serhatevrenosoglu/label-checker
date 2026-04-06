@@ -22,7 +22,7 @@ JIRA_TOKEN = os.environ["JIRA_TOKEN"]
 
 JIRA_BASE = "https://invent.atlassian.net"
 SLACK_CHANNEL = "U029NHG8EPQ"
-JQL = "project in (TCS,BYMN,ATCS,LP2CS,IPEKYOLMD,MMCS) AND created >= -90d AND status != \"Won't Fix\""
+JQL = "project in (TCS,BCS,ATCS,LP2CS,IPEKYOLMD,MMCS) AND created >= -90d AND status != \"Won't Fix\""
 
 VALID_COMBOS = {
     "Service/Operational Work Log": ["ETL","OperationalRequest","ProcessFollowups","Parameter/Configuration","RunReview","RunTrigger","RunError","Dagfails","Maintenance"],
