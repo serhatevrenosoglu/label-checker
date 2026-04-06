@@ -22,7 +22,7 @@ JIRA_TOKEN = os.environ["JIRA_TOKEN"]
 
 JIRA_BASE = "https://invent.atlassian.net"
 SLACK_CHANNEL = "U029NHG8EPQ"
-JQL = "project in (TCS,BYMN,ATCS,LP2CS,IPEKYOLMD,MMCS) AND created >= -90d"
+JQL = "project in (TCS,BYMN,ATCS,LP2CS,IPEKYOLMD,MMCS) AND created >= -90d AND status != \"Won't Fix\""
 
 VALID_COMBOS = {
     "Service/Operational Work Log": ["ETL","OperationalRequest","ProcessFollowups","Parameter/Configuration","RunReview","RunTrigger","RunError","Dagfails","Maintenance"],
@@ -41,7 +41,7 @@ VALID_COMBOS = {
     "Service Work Log (Int)": ["ETL","OperationalRequest","ProcessFollowups","RunReview","RunTrigger","RunError"],
     "Operational": ["ETL","OperationalRequest","ProcessFollowups","Parameter/Configuration","RunReview","RunTrigger","RunError","Dagfails","Maintenance"],
 }
-SKIP_TYPES = {"Task", "Sub-task"}
+SKIP_TYPES = {"Sub-task"}
 
 
 def fetch_all_issues():
@@ -73,6 +73,7 @@ def fetch_all_issues():
 def check_issues(issues):
     missing_labels = []
     wrong_labels = []
+    unknown_types = []
     for issue in issues:
         fields = issue["fields"]
         issue_type = fields["issuetype"]["name"]
@@ -81,6 +82,13 @@ def check_issues(issues):
         labels = fields.get("labels", [])
         valid = VALID_COMBOS.get(issue_type)
         if valid is None:
+            unknown_types.append({
+                "project": fields["project"]["key"],
+                "key": issue["key"],
+                "summary": fields["summary"],
+                "issue_type": issue_type,
+                "labels": labels,
+            })
             continue
         if not labels:
             missing_labels.append({
@@ -99,7 +107,7 @@ def check_issues(issues):
                     "issue_type": issue_type,
                     "label": label,
                 })
-    return missing_labels, wrong_labels
+    return missing_labels, wrong_labels, unknown_types
 
 
 def send_slack(text):
@@ -118,8 +126,8 @@ def main():
     issues = fetch_all_issues()
     print(f"Total issues fetched: {len(issues)}")
 
-    missing_labels, wrong_labels = check_issues(issues)
-    total_issues = len(missing_labels) + len(wrong_labels)
+    missing_labels, wrong_labels, unknown_types = check_issues(issues)
+    total_issues = len(missing_labels) + len(wrong_labels) + len(unknown_types)
 
     if total_issues == 0:
         text = f"✅ *Günlük Label Kontrol (Son 3 Ay) — {today}*\nTüm boardlar temiz, uyumsuzluk bulunamadı."
@@ -140,15 +148,23 @@ def main():
                     f"⚠️ *{m['project']}* | {m['key']} — {m['summary']}\n"
                     f"Type: `{m['issue_type']}` | Label: `{m['label']}`"
                 )
+        if unknown_types:
+            lines.append(f"\n*— Tanımsız Issue Type ({len(unknown_types)} adet) —*")
+            for m in unknown_types:
+                lbl = ", ".join(m["labels"]) if m["labels"] else "_yok_"
+                lines.append(
+                    f"❓ *{m['project']}* | {m['key']} — {m['summary']}\n"
+                    f"Type: `{m['issue_type']}` | Labels: {lbl}"
+                )
         text = "\n\n".join(lines)
         print(text)
 
     if test_mode:
-        print(f"\n[TEST MODE] Slack skipped. Eksik: {len(missing_labels)}, Yanlış: {len(wrong_labels)}")
+        print(f"\n[TEST MODE] Slack skipped. Eksik: {len(missing_labels)}, Yanlış: {len(wrong_labels)}, Tanımsız tip: {len(unknown_types)}")
         return
 
     send_slack(text)
-    print(f"Done. Eksik: {len(missing_labels)}, Yanlış: {len(wrong_labels)}")
+    print(f"Done. Eksik: {len(missing_labels)}, Yanlış: {len(wrong_labels)}, Tanımsız tip: {len(unknown_types)}")
 
 
 if __name__ == "__main__":
