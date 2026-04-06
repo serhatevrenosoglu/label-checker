@@ -22,7 +22,7 @@ JIRA_TOKEN = os.environ["JIRA_TOKEN"]
 
 JIRA_BASE = "https://invent.atlassian.net"
 SLACK_CHANNEL = "U029NHG8EPQ"
-JQL = "project in (TCS,BYMN,ATCS,LP2CS,IPEKYOLMD,MMCS) AND labels is not EMPTY AND created >= -90d"
+JQL = "project in (TCS,BYMN,ATCS,LP2CS,IPEKYOLMD,MMCS) AND created >= -90d"
 
 VALID_COMBOS = {
     "Service/Operational Work Log": ["ETL","OperationalRequest","ProcessFollowups","Parameter/Configuration","RunReview","RunTrigger","RunError","Dagfails","Maintenance"],
@@ -71,7 +71,8 @@ def fetch_all_issues():
 
 
 def check_issues(issues):
-    mismatches = []
+    missing_labels = []
+    wrong_labels = []
     for issue in issues:
         fields = issue["fields"]
         issue_type = fields["issuetype"]["name"]
@@ -81,16 +82,24 @@ def check_issues(issues):
         valid = VALID_COMBOS.get(issue_type)
         if valid is None:
             continue
+        if not labels:
+            missing_labels.append({
+                "project": fields["project"]["key"],
+                "key": issue["key"],
+                "summary": fields["summary"],
+                "issue_type": issue_type,
+            })
+            continue
         for label in labels:
             if label not in valid:
-                mismatches.append({
+                wrong_labels.append({
                     "project": fields["project"]["key"],
                     "key": issue["key"],
                     "summary": fields["summary"],
                     "issue_type": issue_type,
                     "label": label,
                 })
-    return mismatches
+    return missing_labels, wrong_labels
 
 
 def send_slack(text):
@@ -109,27 +118,37 @@ def main():
     issues = fetch_all_issues()
     print(f"Total issues fetched: {len(issues)}")
 
-    mismatches = check_issues(issues)
+    missing_labels, wrong_labels = check_issues(issues)
+    total_issues = len(missing_labels) + len(wrong_labels)
 
-    if not mismatches:
+    if total_issues == 0:
         text = f"✅ *Günlük Label Kontrol (Son 3 Ay) — {today}*\nTüm boardlar temiz, uyumsuzluk bulunamadı."
         print(text)
     else:
         lines = [f"🔍 *Günlük Label Kontrol (Son 3 Ay) — {today}*\n"]
-        for m in mismatches:
-            lines.append(
-                f"⚠️ *{m['project']}* | {m['key']} — {m['summary']}\n"
-                f"Type: `{m['issue_type']}` | Label: `{m['label']}`"
-            )
+        if missing_labels:
+            lines.append(f"*— Label Eksik ({len(missing_labels)} adet) —*")
+            for m in missing_labels:
+                lines.append(
+                    f"🏷️ *{m['project']}* | {m['key']} — {m['summary']}\n"
+                    f"Type: `{m['issue_type']}` | Label: _yok_"
+                )
+        if wrong_labels:
+            lines.append(f"\n*— Yanlış Label ({len(wrong_labels)} adet) —*")
+            for m in wrong_labels:
+                lines.append(
+                    f"⚠️ *{m['project']}* | {m['key']} — {m['summary']}\n"
+                    f"Type: `{m['issue_type']}` | Label: `{m['label']}`"
+                )
         text = "\n\n".join(lines)
         print(text)
 
     if test_mode:
-        print(f"\n[TEST MODE] Slack skipped. Mismatches found: {len(mismatches)}")
+        print(f"\n[TEST MODE] Slack skipped. Eksik: {len(missing_labels)}, Yanlış: {len(wrong_labels)}")
         return
 
     send_slack(text)
-    print(f"Done. Mismatches found: {len(mismatches)}")
+    print(f"Done. Eksik: {len(missing_labels)}, Yanlış: {len(wrong_labels)}")
 
 
 if __name__ == "__main__":
