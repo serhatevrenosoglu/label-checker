@@ -111,9 +111,12 @@ def check_issues(issues):
 
 
 def send_slack(text):
-    url = os.environ["SLACK_WEBHOOK_URL"]
-    payload = {"payload": json.dumps({"text": text})}
-    resp = requests.post(url, data=payload)
+    token = os.environ["SLACK_TOKEN"]
+    resp = requests.post(
+        "https://slack.com/api/chat.postMessage",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"channel": "U029NHG8EPQ", "text": text},
+    )
     print(f"Slack status: {resp.status_code}")
     print(f"Slack response: {resp.text}")
 
